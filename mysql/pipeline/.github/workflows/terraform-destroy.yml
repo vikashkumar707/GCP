@@ -1,0 +1,75 @@
+name: Terraform destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      infra_env:
+        type: choice
+        description: 'Select Subscription'
+        options:
+          - 'CEQ-DEVOPS-SANDBOX'
+    
+jobs:
+  terraform:
+    name: "Terraform Scan & Plan"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup git global config
+        run: git config --global url."https://oauth2:${{secrets.VK_TOKEN}}@github.com".insteadOf https://github.com
+
+      - name: Terraform Scan Install
+        run: curl --location https://github.com/accurics/terrascan/releases/download/v1.9.0/terrascan_1.9.0_Linux_x86_64.tar.gz --output terrascan.tar.gz && tar -xf terrascan.tar.gz terrascan && rm terrascan.tar.gz && install terrascan /usr/local/bin && rm terrascan && terrascan
+
+          
+      - name: "Setting Environment"
+        env:
+         INFRA_ENV: ${{ github.event.inputs.infra_env }}
+        run: |
+          if [ "$INFRA_ENV" == "CEQ-DEVOPS-SANDBOX" ]; then
+           echo "project_id=ceq-devops-sandbox" >> $GITHUB_ENV
+           echo "ENV=sandbox" >> $GITHUB_ENV
+           echo "bucket=gcp_pod_statefile" >> $GITHUB_ENV
+           echo "prefix=gcp-war\terraformfile" >> $GITHUB_ENV
+          elif [ "$INFRA_ENV" == "nonprod" ]; then
+            echo "project_id=ceq-devops-sandbox" >> $GITHUB_ENV
+            echo "ENV=nonprod" >> $GITHUB_ENV
+            echo "bucket=gcp_pod_statefile" >> $GITHUB_ENV
+            echo "prefix=gcp-war\terraformfile" >> $GITHUB_ENV
+          else
+             echo "environment not supported"
+             exit 1
+          fi
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: latest
+          terraform_wrapper: false
+
+      - name: Login to GCP
+        uses: 'google-github-actions/auth@v2'
+        with:
+         credentials_json: '${{ secrets.GCP_SC_KEY }}'
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          credentials_json: '${{ secrets.GCP_SC_KEY }}'    
+
+      - name: Terraform Init
+        run: terraform init -reconfigure -force-copy -backend-config="bucket=$bucket" -backend-config="prefix=$prefix" -input=false
+        env:
+         GOOGLE_CREDENTIALS: ${{ secrets.GCP_SC_KEY }}
+
+      - name: Delete service networking connection
+        shell: bash
+        run: gcloud compute networks peerings delete servicenetworking-googleapis-com --network=vpc-postgresql	   
+
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve -var-file="$ENV/terraform.tfvars" -input=false
+        env:
+           GOOGLE_CREDENTIALS: ${{ secrets.GCP_SC_KEY }}    
