@@ -1,5 +1,5 @@
 module "google_sql_database_instance" {
-  source = "git::https://github.com/cloudeq-EMU-ORG/ceq_tf_template_gcp_wafr_mysql?ref=12e62f9"
+  source = "git::https://github.com/cloudeq-EMU-ORG/ceq_tf_template_gcp_wafr_mysql?ref=11172d0"
 
   for_each = var.sql_db_instance
   name             = each.value.name
